@@ -93,12 +93,12 @@ Pare-feu : UDP/443 (QUIC) et TCP/80+443. Le 80 ne fait que rediriger vers HTTPS.
 
 ## Install
 
-Client macOS, via le tap [lower4th/homebrew-tap](https://github.com/lower4th/homebrew-tap) :
+Client macOS, via le tap [gauthier/homebrew-tap](https://github.com/gauthier/homebrew-tap) :
 
 ```bash
-brew tap lower4th/tap
+brew tap gauthier/tap
 brew install passerelle
-# or: brew install lower4th/tap/passerelle
+# or: brew install gauthier/tap/passerelle
 ```
 
 Puis :
