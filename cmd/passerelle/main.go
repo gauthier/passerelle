@@ -104,9 +104,10 @@ func readToken() (string, error) {
 func openCmd() *cobra.Command {
 	var subdomain string
 	var persist bool
+	var https bool
 	cmd := &cobra.Command{
 		Use:   "open [host:]port",
-		Short: "Expose a local HTTP port through the gateway",
+		Short: "Expose a local HTTP(S) port through the gateway",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := ensureDaemon(); err != nil {
@@ -116,7 +117,7 @@ func openCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := client.NewAPI("").Open(host, port, subdomain, persist)
+			t, err := client.NewAPI("").Open(host, port, subdomain, persist, https)
 			if err != nil {
 				return err
 			}
@@ -126,6 +127,7 @@ func openCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&subdomain, "subdomain", "", "requested subdomain (optional)")
 	cmd.Flags().BoolVar(&persist, "persist", false, "restore this tunnel after reboot")
+	cmd.Flags().BoolVar(&https, "https", false, "dial the local origin with TLS (Docker/Apache on 443)")
 	return cmd
 }
 
@@ -177,7 +179,11 @@ func listCmd() *cobra.Command {
 			}
 			fmt.Printf("%-42s %-22s %-8s %s\n", "PUBLIC URL", "LOCAL", "STATUS", "CONNS")
 			for _, t := range list {
-				fmt.Printf("%-42s %-22s %-8s %d\n", t.PublicURL, t.Local, t.Status, t.Conns)
+				local := t.Local
+				if t.HTTPS {
+					local = "https://" + t.Local
+				}
+				fmt.Printf("%-42s %-22s %-8s %d\n", t.PublicURL, local, t.Status, t.Conns)
 			}
 			return nil
 		},

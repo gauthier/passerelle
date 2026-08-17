@@ -106,7 +106,7 @@ func TestLoopbackOpenHTTP(t *testing.T) {
 		t.Fatalf("client not connected: %+v err=%v", st, err)
 	}
 
-	tun, err := api.Open("127.0.0.1", originPort, "", false)
+	tun, err := api.Open("127.0.0.1", originPort, "", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

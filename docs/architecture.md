@@ -110,6 +110,7 @@ enroll/auth → daemon connecté → open → hostname alloué → requêtes mul
 ```
 
 - `passerelle open 8080` : éphémère. Survivt à la fermeture du terminal (daemon). **Ne** survit **pas** au reboot.
+- `passerelle open 443 --https` : l’origine locale est HTTPS (TLS jusqu’à Docker/Apache). Le visiteur reste en HTTPS sur la gateway ; le dernier hop n’est plus du HTTP clair.
 - `passerelle open 8080 --persist` : ré-ouvert au démarrage du daemon.
 - `passerelle open 8080 --subdomain demo` : demande ; la gateway autorise (collision, appartenance, quotas). Refus = erreur, jamais d’override silencieux.
 - Cible par défaut : `127.0.0.1`, pas `localhost` (IPv6 / `/etc/hosts`).
@@ -132,7 +133,7 @@ CLI client (évolutive) :
 
 ```
 passerelle auth <gateway-url>
-passerelle open [host:]<port> [--subdomain] [--persist]
+passerelle open [host:]<port> [--subdomain] [--persist] [--https]
 passerelle close <id|url>
 passerelle list
 passerelle status

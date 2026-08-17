@@ -87,7 +87,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		rows := make([]table.Row, 0, len(m.snap.Tunnels))
 		for _, t := range m.snap.Tunnels {
-			rows = append(rows, table.Row{t.PublicURL, t.Local, t.Status, fmt.Sprintf("%d", t.Conns)})
+			local := t.Local
+			if t.HTTPS {
+				local = "https://" + t.Local
+			}
+			rows = append(rows, table.Row{t.PublicURL, local, t.Status, fmt.Sprintf("%d", t.Conns)})
 		}
 		m.table.SetRows(rows)
 	case errMsg:

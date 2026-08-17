@@ -22,6 +22,7 @@ type TunnelSpec struct {
 	Host      string `json:"host"`
 	Port      int    `json:"port"`
 	Subdomain string `json:"subdomain,omitempty"`
+	HTTPS     bool   `json:"https,omitempty"`
 }
 
 func Dir() string {

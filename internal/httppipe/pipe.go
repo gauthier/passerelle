@@ -2,6 +2,7 @@ package httppipe
 
 import (
 	"bufio"
+	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -39,8 +40,9 @@ func ForwardRequest(w http.ResponseWriter, r *http.Request, stream io.ReadWriteC
 }
 
 // ServeOrigin reads an HTTP/1.1 request from the stream, dials the loopback
-// origin, and pipes until both sides close.
-func ServeOrigin(stream io.ReadWriteCloser, addr string, timeout time.Duration) error {
+// origin, and pipes until both sides close. tlsConf, if set, wraps the dial
+// so the origin can be HTTPS (typical Docker / Apache on :443).
+func ServeOrigin(stream io.ReadWriteCloser, addr string, timeout time.Duration, tlsConf *tls.Config) error {
 	defer stream.Close()
 	if timeout <= 0 {
 		timeout = 10 * time.Second
@@ -54,6 +56,23 @@ func ServeOrigin(stream io.ReadWriteCloser, addr string, timeout time.Duration) 
 	if err != nil {
 		writeErr(stream, err)
 		return err
+	}
+	if tlsConf != nil {
+		cfg := tlsConf.Clone()
+		if cfg.ServerName == "" {
+			host, _, _ := net.SplitHostPort(addr)
+			cfg.ServerName = host
+			if net.ParseIP(host) != nil {
+				cfg.ServerName = "localhost"
+			}
+		}
+		tc := tls.Client(origin, cfg)
+		if err := tc.Handshake(); err != nil {
+			_ = origin.Close()
+			writeErr(stream, err)
+			return err
+		}
+		origin = tc
 	}
 	defer origin.Close()
 	req.RequestURI = ""

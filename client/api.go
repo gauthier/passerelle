@@ -47,8 +47,8 @@ func (c *APIClient) List() ([]Tunnel, error) {
 	return out, nil
 }
 
-func (c *APIClient) Open(host string, port int, subdomain string, persist bool) (*Tunnel, error) {
-	body, _ := json.Marshal(openReq{Host: host, Port: port, Subdomain: subdomain, Persist: persist})
+func (c *APIClient) Open(host string, port int, subdomain string, persist, https bool) (*Tunnel, error) {
+	body, _ := json.Marshal(openReq{Host: host, Port: port, Subdomain: subdomain, Persist: persist, HTTPS: https})
 	var t Tunnel
 	if err := c.do(http.MethodPost, "/v1/tunnels", bytes.NewReader(body), &t); err != nil {
 		return nil, err
@@ -105,6 +105,7 @@ type openReq struct {
 	Port      int    `json:"port"`
 	Subdomain string `json:"subdomain"`
 	Persist   bool   `json:"persist"`
+	HTTPS     bool   `json:"https,omitempty"`
 }
 
 type Status struct {
@@ -124,6 +125,7 @@ type Tunnel struct {
 	PublicURL string `json:"public_url"`
 	Hostname  string `json:"hostname"`
 	Local     string `json:"local"`
+	HTTPS     bool   `json:"https,omitempty"`
 	Status    string `json:"status"`
 	Persist   bool   `json:"persist"`
 	Conns     int64  `json:"connections"`

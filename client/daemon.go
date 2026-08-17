@@ -33,7 +33,7 @@ type Daemon struct {
 	mu        sync.Mutex
 	cfg       Config
 	tunnels   map[string]*liveTunnel
-	local     map[string]string // tunnelID -> host:port
+	local     map[string]localOrigin // tunnelID -> loopback target
 	pending   map[uint64]chan *controlv1.Envelope
 	seq       uint64
 	control   io.ReadWriteCloser
@@ -52,6 +52,11 @@ type liveTunnel struct {
 	Tunnel
 }
 
+type localOrigin struct {
+	Addr string
+	TLS  bool
+}
+
 func NewDaemon(log *slog.Logger, socket string) *Daemon {
 	if log == nil {
 		log = logging.New("text", "info")
@@ -65,7 +70,7 @@ func NewDaemon(log *slog.Logger, socket string) *Daemon {
 		socket:  socket,
 		cfg:     cfg,
 		tunnels: make(map[string]*liveTunnel),
-		local:   make(map[string]string),
+		local:   make(map[string]localOrigin),
 		pending: make(map[uint64]chan *controlv1.Envelope),
 	}
 }
@@ -335,7 +340,7 @@ func (d *Daemon) restorePersistent(ctx context.Context) {
 		if already {
 			continue
 		}
-		if _, err := d.openTunnel(spec.Host, spec.Port, spec.Subdomain, true); err != nil {
+		if _, err := d.openTunnel(spec.Host, spec.Port, spec.Subdomain, true, spec.HTTPS); err != nil {
 			d.log.Info("restore tunnel failed", "err", err, "port", spec.Port)
 		}
 	}
@@ -427,10 +432,10 @@ func (d *Daemon) handleData(stream io.ReadWriteCloser) {
 		return
 	}
 	d.mu.Lock()
-	addr := d.local[id]
+	orig := d.local[id]
 	t := d.tunnels[id]
 	d.mu.Unlock()
-	if addr == "" {
+	if orig.Addr == "" {
 		_ = stream.Close()
 		return
 	}
@@ -438,10 +443,18 @@ func (d *Daemon) handleData(stream io.ReadWriteCloser) {
 		atomic.AddInt64(&t.Conns, 1)
 		defer atomic.AddInt64(&t.Conns, -1)
 	}
-	_ = httppipe.ServeOrigin(stream, addr, 10*time.Second)
+	var tlsConf *tls.Config
+	if orig.TLS {
+		tlsConf = &tls.Config{
+			InsecureSkipVerify: true, // loopback; Docker/Apache certs are not for 127.0.0.1
+			MinVersion:         tls.VersionTLS12,
+			ServerName:         "localhost",
+		}
+	}
+	_ = httppipe.ServeOrigin(stream, orig.Addr, 10*time.Second, tlsConf)
 }
 
-func (d *Daemon) openTunnel(host string, port int, subdomain string, persist bool) (*Tunnel, error) {
+func (d *Daemon) openTunnel(host string, port int, subdomain string, persist, https bool) (*Tunnel, error) {
 	addr, err := origin.ResolveLoopback(host, port)
 	if err != nil {
 		return nil, err
@@ -475,15 +488,16 @@ func (d *Daemon) openTunnel(host string, port int, subdomain string, persist boo
 			PublicURL: p.OpenTunnelAck.GetPublicUrl(),
 			Hostname:  p.OpenTunnelAck.GetHostname(),
 			Local:     addr,
+			HTTPS:     https,
 			Status:    "active",
 			Persist:   persist,
 		}}
 		d.mu.Lock()
 		d.tunnels[t.ID] = t
-		d.local[t.ID] = addr
+		d.local[t.ID] = localOrigin{Addr: addr, TLS: https}
 		if persist {
 			h, pth, _ := origin.ParseHostPort(addr)
-			d.cfg.UpsertPersistent(TunnelSpec{Host: h, Port: pth, Subdomain: subdomain})
+			d.cfg.UpsertPersistent(TunnelSpec{Host: h, Port: pth, Subdomain: subdomain, HTTPS: https})
 			_ = d.cfg.Save()
 		}
 		out := t.Tunnel
@@ -557,7 +571,7 @@ func (d *Daemon) serveOpen(w http.ResponseWriter, r *http.Request) {
 	if req.Host == "" {
 		req.Host = "127.0.0.1"
 	}
-	t, err := d.openTunnel(req.Host, req.Port, req.Subdomain, req.Persist)
+	t, err := d.openTunnel(req.Host, req.Port, req.Subdomain, req.Persist, req.HTTPS)
 	if err != nil {
 		http.Error(w, err.Error(), 502)
 		return
