@@ -6,10 +6,10 @@ func TestNormalizeGatewayURL(t *testing.T) {
 	tests := []struct {
 		in, want string
 	}{
-		{"", DefaultGatewayURL},
-		{"  ", DefaultGatewayURL},
-		{"passerelle.gnthr.dev", "https://passerelle.gnthr.dev"},
-		{"https://passerelle.gnthr.dev/", "https://passerelle.gnthr.dev"},
+		{"", ""},
+		{"  ", ""},
+		{"passerelle.example.com", "https://passerelle.example.com"},
+		{"https://passerelle.example.com/", "https://passerelle.example.com"},
 		{"http://127.0.0.1:8080", "http://127.0.0.1:8080"},
 	}
 	for _, tt := range tests {

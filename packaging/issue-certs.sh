@@ -1,11 +1,11 @@
 #!/bin/sh
-# Issue a Let's Encrypt cert for *.gnthr.dev via Porkbun DNS-01 (lego).
+# Issue a Let's Encrypt wildcard cert via DNS-01 (lego).
 #
-# 1. Porkbun → Account → API Access: create a key pair.
-# 2. Same page: enable "Opt In All Domains", OR Domain Management →
-#    gnthr.dev → Details → API Access. Keys alone are not enough.
+# 1. DNS provider API credentials (Porkbun: Account → API Access).
+# 2. Enable API access for the domain.
 # 3. Then:
-#      ACME_EMAIL=toi@gnthr.dev \
+#      ACME_EMAIL=toi@example.com \
+#      DOMAIN=example.com \
 #      PORKBUN_API_KEY=pk1_… \
 #      PORKBUN_SECRET_API_KEY=sk1_… \
 #        ./packaging/issue-certs.sh
@@ -13,7 +13,7 @@ set -eu
 
 ACME_EMAIL="${ACME_EMAIL:?set ACME_EMAIL}"
 DNS_PROVIDER="${DNS_PROVIDER:-porkbun}"
-DOMAIN="${DOMAIN:-gnthr.dev}"
+DOMAIN="${DOMAIN:?set DOMAIN (e.g. example.com)}"
 OUT_DIR="${OUT_DIR:-./certs}"
 
 if [ "$DNS_PROVIDER" = "porkbun" ]; then
@@ -53,4 +53,4 @@ echo "  $OUT_DIR/tls.crt"
 echo "  $OUT_DIR/tls.key"
 echo
 echo "deploy:"
-echo "  DEPLOY_TLS_CERT=$OUT_DIR/tls.crt DEPLOY_TLS_KEY=$OUT_DIR/tls.key ./packaging/deploy-gateway.sh"
+echo "  DEPLOY_TLS_CERT=$OUT_DIR/tls.crt DEPLOY_TLS_KEY=$OUT_DIR/tls.key BASE_DOMAIN=$DOMAIN ./packaging/deploy-gateway.sh user@host"

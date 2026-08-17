@@ -45,20 +45,19 @@ func main() {
 }
 
 func authCmd() *cobra.Command {
-	var gateway string
 	var insecure bool
 	cmd := &cobra.Command{
-		Use:     "auth",
+		Use:     "auth <gateway-url>",
 		Aliases: []string{"enroll"},
 		Short:   "Connect this device to a gateway",
-		Args:    cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		Args:    cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
 			token, err := readToken()
 			if err != nil {
 				return err
 			}
 			cfg, err := client.Enroll(client.EnrollInput{
-				GatewayURL: gateway,
+				GatewayURL: args[0],
 				Token:      token,
 				Insecure:   insecure,
 			})
@@ -69,7 +68,6 @@ func authCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&gateway, "gateway", client.DefaultGatewayURL, "gateway URL")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "skip TLS verify (dev only)")
 	return cmd
 }

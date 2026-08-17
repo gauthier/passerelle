@@ -12,8 +12,6 @@ import (
 	"github.com/gauthier/passerelle/internal/tlsutil"
 )
 
-const DefaultGatewayURL = "https://passerelle.gnthr.dev"
-
 type EnrollInput struct {
 	GatewayURL string
 	Token      string
@@ -23,7 +21,7 @@ type EnrollInput struct {
 func NormalizeGatewayURL(s string) string {
 	s = strings.TrimRight(strings.TrimSpace(s), "/")
 	if s == "" {
-		return DefaultGatewayURL
+		return ""
 	}
 	if !strings.Contains(s, "://") {
 		return "https://" + s
@@ -41,6 +39,9 @@ func Enroll(in EnrollInput) (Config, error) {
 		"csr":   string(csr),
 	})
 	in.GatewayURL = NormalizeGatewayURL(in.GatewayURL)
+	if in.GatewayURL == "" {
+		return Config{}, fmt.Errorf("gateway URL is required")
+	}
 	url := in.GatewayURL + "/v1/enroll"
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {

@@ -19,7 +19,7 @@ The gateway is Internet-facing and will be shared with a small group (operator +
 1. Gateway generates an internal tunnel CA (key mode 0600).
 2. Operator: `passerelle-gateway user add <name>` then `token create --user <name>`.
 3. Token: high entropy, short TTL, single use, SHA-256 stored, bound to `user_id`. Delivered out of band.
-4. Client: `passerelle auth` (default `https://passerelle.gnthr.dev`) generates a key, submits a CSR to `POST /v1/enroll` on public HTTPS.
+4. Client: `passerelle auth <gateway-url>` generates a key, submits a CSR to `POST /v1/enroll` on public HTTPS. The one-time token is read from a hidden prompt (not argv).
 5. Gateway consumes the token, enforces the device quota, issues a client cert whose URI SANs carry `user_id` and `client_id`, returns the tunnel CA and tunnel endpoints.
 
 **Steady state**

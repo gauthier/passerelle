@@ -1,15 +1,31 @@
 #!/bin/sh
 # Deploy passerelle-gateway over SSH.
 # Usage:
-#   ./packaging/deploy-gateway.sh
-#   ./packaging/deploy-gateway.sh root@passserelle.gnthr.dev
-#   DEPLOY_HOST=root@passerelle.gnthr.dev ./packaging/deploy-gateway.sh
+#   ./packaging/deploy-gateway.sh root@gateway.example.com example.com
+#   DEPLOY_HOST=root@gateway.example.com BASE_DOMAIN=example.com ./packaging/deploy-gateway.sh
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-HOST="${1:-${DEPLOY_HOST:-root@passerelle.gnthr.dev}}"
+HOST="${1:-${DEPLOY_HOST:?pass user@host or set DEPLOY_HOST}}"
+if [ -n "${2:-}" ]; then
+  BASE_DOMAIN="$2"
+fi
+BASE_DOMAIN="${BASE_DOMAIN:?pass base_domain as second arg or set BASE_DOMAIN}"
+
+valid_domain() {
+  case "$1" in
+    "" | *[!a-zA-Z0-9.-]* | .* | *. | *- | -* | *..*) return 1 ;;
+    *.*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+if ! valid_domain "$BASE_DOMAIN"; then
+  echo "invalid BASE_DOMAIN: ${BASE_DOMAIN}" >&2
+  echo "usage: $0 user@host example.com" >&2
+  exit 1
+fi
 PREFIX="${PREFIX:-/usr/local}"
 BIN_REMOTE="${PREFIX}/bin/passerelle-gateway"
 CONF_DIR="/etc/passerelle"
@@ -41,12 +57,14 @@ CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" "$GO" build -ldflags "$LDFLAGS" \
 
 cp packaging/systemd/passerelle-gateway.service "${STAGING}/passerelle-gateway.service"
 cp packaging/gateway.toml.example "${STAGING}/gateway.toml.example"
+cp packaging/sysctl/99-passerelle-udp.conf "${STAGING}/99-passerelle-udp.conf"
 
 echo "==> copying files"
 scp $SSH_OPTS \
   "${STAGING}/passerelle-gateway" \
   "${STAGING}/passerelle-gateway.service" \
   "${STAGING}/gateway.toml.example" \
+  "${STAGING}/99-passerelle-udp.conf" \
   "${HOST}:/tmp/"
 
 if [ -n "${DEPLOY_TLS_CERT:-}" ] && [ -n "${DEPLOY_TLS_KEY:-}" ]; then
@@ -58,6 +76,7 @@ echo "==> installing on ${HOST}"
 # shellcheck disable=SC2086
 ssh $SSH_OPTS "$HOST" PREFIX="$PREFIX" BIN_REMOTE="$BIN_REMOTE" \
   CONF_DIR="$CONF_DIR" DATA_DIR="$DATA_DIR" \
+  BASE_DOMAIN="$BASE_DOMAIN" \
   HAS_TLS="${DEPLOY_TLS_CERT:+1}" \
   sh -s <<'REMOTE'
 set -eu
@@ -75,10 +94,14 @@ install -d -m 0700 -o passerelle -g passerelle "$DATA_DIR"
 install -m 0755 /tmp/passerelle-gateway "$BIN_REMOTE"
 rm -f /tmp/passerelle-gateway
 
-if [ ! -f "$CONF_DIR/gateway.toml" ]; then
-  install -m 0640 -o root -g passerelle /tmp/gateway.toml.example "$CONF_DIR/gateway.toml"
+tmp="$(mktemp)"
+if [ -f "$CONF_DIR/gateway.toml" ]; then
+  sed "s/^base_domain = \".*\"/base_domain = \"${BASE_DOMAIN}\"/" "$CONF_DIR/gateway.toml" >"$tmp"
+else
+  sed "s/^base_domain = \".*\"/base_domain = \"${BASE_DOMAIN}\"/" /tmp/gateway.toml.example >"$tmp"
 fi
-rm -f /tmp/gateway.toml.example
+install -m 0640 -o root -g passerelle "$tmp" "$CONF_DIR/gateway.toml"
+rm -f "$tmp" /tmp/gateway.toml.example
 
 install -m 0644 /tmp/passerelle-gateway.service /etc/systemd/system/passerelle-gateway.service
 rm -f /tmp/passerelle-gateway.service
@@ -88,6 +111,10 @@ if [ "${HAS_TLS:-}" = "1" ]; then
   install -m 0640 -o root -g passerelle /tmp/passerelle-tls.key "$CONF_DIR/tls.key"
   rm -f /tmp/passerelle-tls.crt /tmp/passerelle-tls.key
 fi
+
+install -m 0644 /tmp/99-passerelle-udp.conf /etc/sysctl.d/99-passerelle-udp.conf
+rm -f /tmp/99-passerelle-udp.conf
+sysctl --system >/dev/null
 
 if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
   ufw allow 80/tcp >/dev/null
@@ -103,13 +130,14 @@ if [ -f "$CONF_DIR/tls.crt" ] && [ -f "$CONF_DIR/tls.key" ]; then
   systemctl --no-pager --full status passerelle-gateway.service | head -n 20
   echo
   echo "gateway running"
-  echo "  enroll: https://passerelle.gnthr.dev"
+  echo "  base_domain=${BASE_DOMAIN}"
+  echo "  enroll: passerelle auth https://passerelle.${BASE_DOMAIN}"
 else
   echo
   echo "binary and unit installed; TLS certs missing:"
   echo "  $CONF_DIR/tls.crt"
   echo "  $CONF_DIR/tls.key"
-  echo "Install a cert with SAN *.gnthr.dev then:"
+  echo "Install a cert with SAN *.${BASE_DOMAIN} then:"
   echo "  systemctl start passerelle-gateway"
 fi
 REMOTE

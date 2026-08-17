@@ -68,7 +68,7 @@ Pas de mot de passe, pas d’OAuth, pas de dashboard web en v1. L’opérateur a
 1. La gateway génère une **CA tunnel** interne (clé 0600, data dir).
 2. `passerelle-gateway user add alice` crée l’utilisateur et ses quotas.
 3. `passerelle-gateway token create --user alice` émet un bootstrap token one-shot, TTL court, hashé at rest, **lié au `user_id`**.
-4. `passerelle auth` : le client se connecte à `https://passerelle.gnthr.dev`, génère une clé, envoie une CSR.
+4. `passerelle auth <gateway-url>` : le client génère une clé, envoie une CSR. Le token se saisit au prompt (jamais en argument).
 5. La gateway consomme le token, vérifie le quota devices, émet un certificat dont les URI SAN portent `user_id` et `client_id`.
 6. Connexions tunnel suivantes : **mTLS**. L’identité est le certificat. Un hello protobuf qui prétend être bob est ignoré.
 7. Clé privée device : Keychain / Credential Manager / libsecret ; fallback fichier 0600, loggué comme dégradé.
@@ -131,7 +131,7 @@ launchd agent / systemd --user / tâche de session Windows --> daemon
 CLI client (évolutive) :
 
 ```
-passerelle auth [--gateway <url>]
+passerelle auth <gateway-url>
 passerelle open [host:]<port> [--subdomain] [--persist]
 passerelle close <id|url>
 passerelle list

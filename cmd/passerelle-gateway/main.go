@@ -176,9 +176,12 @@ func userCmd(dataDir *string) *cobra.Command {
 func userLimitsCmd(dataDir *string) *cobra.Command {
 	var devices, tunnels, conns int
 	cmd := &cobra.Command{
-		Use:   "limits <name>",
+		Use:   "limits <name> [--devices n] [--tunnels n] [--conns n]",
 		Args:  cobra.ExactArgs(1),
-		Short: "Show or change a user's quotas",
+		Short: "Show or update a user's quotas",
+		Example: `  passerelle-gateway user limits alice --data-dir /var/lib/passerelle
+  passerelle-gateway user limits alice --devices 10 --tunnels 20 --conns 200 --data-dir /var/lib/passerelle`,
+		DisableFlagsInUseLine: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			st, err := identity.Open(resolveDir(dataDir))
 			if err != nil {
@@ -200,6 +203,7 @@ func userLimitsCmd(dataDir *string) *cobra.Command {
 					return err
 				}
 				fmt.Printf("%s max_devices=%d max_tunnels=%d max_conns=%d\n", u.Name, u.Quotas.MaxDevices, u.Quotas.MaxTunnels, u.Quotas.MaxConns)
+				fmt.Fprintf(os.Stderr, "to change: passerelle-gateway user limits %s --devices N --tunnels N --conns N --data-dir %s\n", u.Name, resolveDir(dataDir))
 				return nil
 			}
 			u, err := st.PatchUserQuotas(args[0], patch)

@@ -1,12 +1,11 @@
-# Production gateway — gnthr.dev
+# Copy to /etc/passerelle/gateway.toml and set base_domain.
 #
-# DNS already in place: *.gnthr.dev → this host.
-# A wildcard does not cover the apex gnthr.dev; enrollment uses
-# passerelle.gnthr.dev (reserved, not allocatable as a tunnel).
+# DNS: *.<base_domain> → this host. A wildcard does not cover the apex;
+# enrollment uses the reserved name passerelle.<base_domain>.
 #
-# TLS: certificate with SANs gnthr.dev (optional) and *.gnthr.dev.
+# TLS: certificate with SAN *.<base_domain> (apex optional).
 
-base_domain = "gnthr.dev"
+base_domain = "example.com"
 listen_https = ":443"
 listen_http = ":80"
 listen_quic = ":443"
@@ -30,4 +29,4 @@ default_max_conns = 100
 enabled = false
 email = ""
 dns_provider = ""
-# Optional later: ACME inside the gateway (not required; certs come from lego+Porkbun).
+# Optional later: ACME inside the gateway (not required; certs come from lego+DNS-01).
