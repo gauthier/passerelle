@@ -454,11 +454,18 @@ func (s *Server) handleControl(sess *tunnel.Session, env *controlv1.Envelope) er
 	case *controlv1.Envelope_OpenTunnel:
 		return s.openTunnel(sess, env.Seq, p.OpenTunnel)
 	case *controlv1.Envelope_CloseTunnel:
-		s.reg.Release(p.CloseTunnel.GetTunnelId())
+		id := p.CloseTunnel.GetTunnelId()
+		if alloc, _, ok := s.reg.GetTunnel(id); ok {
+			if alloc.UserID != sess.UserID() {
+				return fmt.Errorf("tunnel not owned")
+			}
+			s.log.Info("tunnel close", "user_id", sess.UserID(), "hostname", alloc.Hostname, "tunnel_id", id)
+		}
+		s.reg.Release(id)
 		return tunnelconn.WriteEnvelope(sess.Control(), &controlv1.Envelope{
 			Seq: env.Seq,
 			Payload: &controlv1.Envelope_CloseTunnelAck{CloseTunnelAck: &controlv1.CloseTunnelAck{
-				TunnelId: p.CloseTunnel.GetTunnelId(),
+				TunnelId: id,
 			}},
 		})
 	default:

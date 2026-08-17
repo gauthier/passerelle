@@ -146,4 +146,24 @@ func TestLoopbackOpenHTTP(t *testing.T) {
 	if len(list) != 1 {
 		t.Fatalf("tunnels: %+v", list)
 	}
+
+	if err := api.Close(tun.ID); err != nil {
+		t.Fatal(err)
+	}
+	list, err = api.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 0 {
+		t.Fatalf("still open after close: %+v", list)
+	}
+	res2, err := hc.Do(req.Clone(context.Background()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res2.Body.Close()
+	if res2.StatusCode != http.StatusNotFound {
+		body, _ := io.ReadAll(res2.Body)
+		t.Fatalf("closed tunnel still served: status %d body %q", res2.StatusCode, body)
+	}
 }

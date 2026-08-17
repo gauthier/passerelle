@@ -134,7 +134,7 @@ CLI client (évolutive) :
 ```
 passerelle auth <gateway-url>
 passerelle open [host:]<port> [--subdomain] [--persist] [--https]
-passerelle close <id|url>
+passerelle close [id|url|host|port] [--all]
 passerelle list
 passerelle status
 passerelle tui

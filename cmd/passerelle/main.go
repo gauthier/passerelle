@@ -132,27 +132,59 @@ func openCmd() *cobra.Command {
 }
 
 func closeCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "close <id|url>",
+	var all bool
+	cmd := &cobra.Command{
+		Use:   "close [id|url|host|port]",
 		Short: "Close a tunnel",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := ensureDaemon(); err != nil {
 				return err
 			}
-			id := args[0]
-			list, err := client.NewAPI("").List()
+			api := client.NewAPI("")
+			list, err := api.List()
 			if err != nil {
 				return err
 			}
-			for _, t := range list {
-				if t.ID == id || t.PublicURL == id || t.Hostname == id {
-					return client.NewAPI("").Close(t.ID)
+			if all {
+				if len(list) == 0 {
+					fmt.Println("no tunnels")
+					return nil
 				}
+				for _, t := range list {
+					if err := api.Close(t.ID); err != nil {
+						return err
+					}
+					fmt.Println(t.PublicURL)
+				}
+				return nil
 			}
-			return client.NewAPI("").Close(id)
+			var targets []client.Tunnel
+			switch {
+			case len(args) == 1:
+				targets = client.MatchTunnels(list, args[0])
+			case len(list) == 1:
+				targets = list
+			case len(list) == 0:
+				return fmt.Errorf("no tunnels")
+			default:
+				return fmt.Errorf("several tunnels; pass a URL, hostname, port, or --all")
+			}
+			if len(targets) == 0 {
+				return fmt.Errorf("no tunnel matches %q (try passerelle list)", args[0])
+			}
+			if len(targets) > 1 {
+				return fmt.Errorf("several tunnels match %q; be more specific or use --all", args[0])
+			}
+			if err := api.Close(targets[0].ID); err != nil {
+				return err
+			}
+			fmt.Println(targets[0].PublicURL)
+			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&all, "all", false, "close every open tunnel")
+	return cmd
 }
 
 func listCmd() *cobra.Command {
@@ -177,13 +209,9 @@ func listCmd() *cobra.Command {
 				fmt.Println("no tunnels")
 				return nil
 			}
-			fmt.Printf("%-42s %-22s %-8s %s\n", "PUBLIC URL", "LOCAL", "STATUS", "CONNS")
+			fmt.Printf("%-18s %-42s %-22s %-8s %s\n", "ID", "PUBLIC URL", "LOCAL", "STATUS", "CONNS")
 			for _, t := range list {
-				local := t.Local
-				if t.HTTPS {
-					local = "https://" + t.Local
-				}
-				fmt.Printf("%-42s %-22s %-8s %d\n", t.PublicURL, local, t.Status, t.Conns)
+				fmt.Printf("%-18s %-42s %-22s %-8s %d\n", t.ID, t.PublicURL, t.LocalDisplay(), t.Status, t.Conns)
 			}
 			return nil
 		},

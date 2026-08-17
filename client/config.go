@@ -84,7 +84,8 @@ func (c *Config) UpsertPersistent(spec TunnelSpec) {
 func (c *Config) RemovePersistent(host string, port int, subdomain string) {
 	out := c.Persistent[:0]
 	for _, p := range c.Persistent {
-		if p.Host == host && p.Port == port && p.Subdomain == subdomain {
+		same := p.Host == host && p.Port == port
+		if same && (subdomain == "" || p.Subdomain == subdomain) {
 			continue
 		}
 		out = append(out, p)

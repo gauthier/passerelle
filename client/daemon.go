@@ -489,6 +489,7 @@ func (d *Daemon) openTunnel(host string, port int, subdomain string, persist, ht
 			Hostname:  p.OpenTunnelAck.GetHostname(),
 			Local:     addr,
 			HTTPS:     https,
+			Subdomain: subdomain,
 			Status:    "active",
 			Persist:   persist,
 		}}
@@ -518,17 +519,35 @@ func (d *Daemon) closeTunnel(id string) error {
 	if !ok {
 		return fmt.Errorf("unknown tunnel")
 	}
+	// Drop persist first so a reconnect cannot restore this tunnel.
+	if t.Persist {
+		d.mu.Lock()
+		h, p, _ := origin.ParseHostPort(t.Local)
+		d.cfg.RemovePersistent(h, p, t.Subdomain)
+		_ = d.cfg.Save()
+		d.mu.Unlock()
+	}
 	if ctrl != nil {
-		_ = d.writeControl(ctrl, &controlv1.Envelope{Payload: &controlv1.Envelope_CloseTunnel{CloseTunnel: &controlv1.CloseTunnel{TunnelId: id}}})
+		env := &controlv1.Envelope{Payload: &controlv1.Envelope_CloseTunnel{CloseTunnel: &controlv1.CloseTunnel{TunnelId: id}}}
+		ch := d.expect(env)
+		if err := d.writeControl(ctrl, env); err != nil {
+			d.mu.Lock()
+			delete(d.pending, env.Seq)
+			d.mu.Unlock()
+			return fmt.Errorf("notify gateway: %w", err)
+		}
+		select {
+		case reply := <-ch:
+			if e := reply.GetError(); e != nil {
+				return fmt.Errorf("%s", e.GetMessage())
+			}
+		case <-time.After(8 * time.Second):
+			return fmt.Errorf("timeout waiting for gateway close")
+		}
 	}
 	d.mu.Lock()
 	delete(d.tunnels, id)
 	delete(d.local, id)
-	if t.Persist {
-		h, p, _ := origin.ParseHostPort(t.Local)
-		d.cfg.RemovePersistent(h, p, "")
-		_ = d.cfg.Save()
-	}
 	d.mu.Unlock()
 	return nil
 }

@@ -126,6 +126,7 @@ type Tunnel struct {
 	Hostname  string `json:"hostname"`
 	Local     string `json:"local"`
 	HTTPS     bool   `json:"https,omitempty"`
+	Subdomain string `json:"subdomain,omitempty"`
 	Status    string `json:"status"`
 	Persist   bool   `json:"persist"`
 	Conns     int64  `json:"connections"`

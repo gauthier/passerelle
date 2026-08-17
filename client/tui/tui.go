@@ -34,7 +34,8 @@ func Run(api *client.APIClient) error {
 
 func newTable() table.Model {
 	cols := []table.Column{
-		{Title: "PUBLIC URL", Width: 42},
+		{Title: "ID", Width: 16},
+		{Title: "PUBLIC URL", Width: 36},
 		{Title: "LOCAL", Width: 22},
 		{Title: "STATUS", Width: 10},
 		{Title: "CONNECTIONS", Width: 12},
@@ -87,11 +88,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		rows := make([]table.Row, 0, len(m.snap.Tunnels))
 		for _, t := range m.snap.Tunnels {
-			local := t.Local
-			if t.HTTPS {
-				local = "https://" + t.Local
-			}
-			rows = append(rows, table.Row{t.PublicURL, local, t.Status, fmt.Sprintf("%d", t.Conns)})
+			rows = append(rows, table.Row{t.ID, t.PublicURL, t.LocalDisplay(), t.Status, fmt.Sprintf("%d", t.Conns)})
 		}
 		m.table.SetRows(rows)
 	case errMsg:
