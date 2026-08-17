@@ -152,7 +152,7 @@ func userCmd(dataDir *string) *cobra.Command {
 				return err
 			}
 			for _, u := range users {
-				fmt.Printf("%s revoked=%v devices_quota=%d\n", u.Name, u.Revoked, u.Quotas.MaxDevices)
+				fmt.Printf("%s revoked=%v max_devices=%d max_tunnels=%d max_conns=%d\n", u.Name, u.Revoked, u.Quotas.MaxDevices, u.Quotas.MaxTunnels, u.Quotas.MaxConns)
 			}
 			return nil
 		},
@@ -169,7 +169,50 @@ func userCmd(dataDir *string) *cobra.Command {
 			return st.RevokeUser(args[0])
 		},
 	}
-	cmd.AddCommand(add, list, rev)
+	cmd.AddCommand(add, list, rev, userLimitsCmd(dataDir))
+	return cmd
+}
+
+func userLimitsCmd(dataDir *string) *cobra.Command {
+	var devices, tunnels, conns int
+	cmd := &cobra.Command{
+		Use:   "limits <name>",
+		Args:  cobra.ExactArgs(1),
+		Short: "Show or change a user's quotas",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := identity.Open(resolveDir(dataDir))
+			if err != nil {
+				return err
+			}
+			patch := identity.QuotaPatch{}
+			if cmd.Flags().Changed("devices") {
+				patch.MaxDevices = &devices
+			}
+			if cmd.Flags().Changed("tunnels") {
+				patch.MaxTunnels = &tunnels
+			}
+			if cmd.Flags().Changed("conns") {
+				patch.MaxConns = &conns
+			}
+			if patch.MaxDevices == nil && patch.MaxTunnels == nil && patch.MaxConns == nil {
+				u, err := st.User(args[0])
+				if err != nil {
+					return err
+				}
+				fmt.Printf("%s max_devices=%d max_tunnels=%d max_conns=%d\n", u.Name, u.Quotas.MaxDevices, u.Quotas.MaxTunnels, u.Quotas.MaxConns)
+				return nil
+			}
+			u, err := st.PatchUserQuotas(args[0], patch)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("%s max_devices=%d max_tunnels=%d max_conns=%d\n", u.Name, u.Quotas.MaxDevices, u.Quotas.MaxTunnels, u.Quotas.MaxConns)
+			return nil
+		},
+	}
+	cmd.Flags().IntVar(&devices, "devices", 0, "max enrolled devices")
+	cmd.Flags().IntVar(&tunnels, "tunnels", 0, "max concurrent tunnels")
+	cmd.Flags().IntVar(&conns, "conns", 0, "max concurrent public HTTP connections")
 	return cmd
 }
 

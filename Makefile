@@ -1,6 +1,6 @@
 GO ?= go
 BINDIR ?= bin
-VERSION ?= 0.1.0
+VERSION ?= 0.1.1
 LDFLAGS := -s -w -X github.com/gauthier/passerelle/internal/version.Version=$(VERSION)
 
 .PHONY: all build proto test clean deploy-gateway

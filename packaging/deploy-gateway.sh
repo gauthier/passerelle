@@ -15,7 +15,7 @@ BIN_REMOTE="${PREFIX}/bin/passerelle-gateway"
 CONF_DIR="/etc/passerelle"
 DATA_DIR="/var/lib/passerelle"
 GO="${GO:-go}"
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.1.1}"
 LDFLAGS="-s -w -X github.com/gauthier/passerelle/internal/version.Version=${VERSION}"
 
 SSH_OPTS="${SSH_OPTS:--o StrictHostKeyChecking=accept-new}"

@@ -161,6 +161,53 @@ func (s *Store) User(id string) (*User, error) {
 	return nil, fmt.Errorf("user %q not found", id)
 }
 
+type QuotaPatch struct {
+	MaxDevices *int
+	MaxTunnels *int
+	MaxConns   *int
+}
+
+func (s *Store) PatchUserQuotas(name string, p QuotaPatch) (*User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	users, err := s.readUsers()
+	if err != nil {
+		return nil, err
+	}
+	for i := range users {
+		if users[i].Name != name && users[i].ID != name {
+			continue
+		}
+		if users[i].Revoked {
+			return nil, fmt.Errorf("user %q is revoked", name)
+		}
+		if p.MaxDevices != nil {
+			if *p.MaxDevices < 1 {
+				return nil, fmt.Errorf("--devices must be >= 1")
+			}
+			users[i].Quotas.MaxDevices = *p.MaxDevices
+		}
+		if p.MaxTunnels != nil {
+			if *p.MaxTunnels < 1 {
+				return nil, fmt.Errorf("--tunnels must be >= 1")
+			}
+			users[i].Quotas.MaxTunnels = *p.MaxTunnels
+		}
+		if p.MaxConns != nil {
+			if *p.MaxConns < 1 {
+				return nil, fmt.Errorf("--conns must be >= 1")
+			}
+			users[i].Quotas.MaxConns = *p.MaxConns
+		}
+		if err := s.writeUsers(users); err != nil {
+			return nil, err
+		}
+		u := users[i]
+		return &u, nil
+	}
+	return nil, fmt.Errorf("user %q not found", name)
+}
+
 func (s *Store) CreateToken(userID string, ttl time.Duration) (plain string, err error) {
 	if ttl <= 0 {
 		ttl = time.Hour

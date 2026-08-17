@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/gauthier/passerelle/internal/origin"
 	"github.com/gauthier/passerelle/internal/version"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 func main() {
@@ -26,7 +29,7 @@ func main() {
 		SilenceErrors: true,
 	}
 	root.AddCommand(
-		enrollCmd(),
+		authCmd(),
 		openCmd(),
 		closeCmd(),
 		listCmd(),
@@ -41,26 +44,63 @@ func main() {
 	}
 }
 
-func enrollCmd() *cobra.Command {
-	var token string
+func authCmd() *cobra.Command {
+	var gateway string
 	var insecure bool
 	cmd := &cobra.Command{
-		Use:   "enroll <gateway-url>",
-		Short: "Enroll this device with a gateway",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			cfg, err := client.Enroll(client.EnrollInput{GatewayURL: args[0], Token: token, Insecure: insecure})
+		Use:     "auth",
+		Aliases: []string{"enroll"},
+		Short:   "Connect this device to a gateway",
+		Args:    cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			token, err := readToken()
 			if err != nil {
 				return err
 			}
-			fmt.Printf("enrolled user=%s device=%s\n", cfg.UserID, cfg.ClientID)
+			cfg, err := client.Enroll(client.EnrollInput{
+				GatewayURL: gateway,
+				Token:      token,
+				Insecure:   insecure,
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Printf("authenticated user=%s device=%s gateway=%s\n", cfg.UserID, cfg.ClientID, cfg.EnrollURL)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&token, "token", "", "one-time enrollment token")
-	cmd.Flags().BoolVar(&insecure, "insecure", false, "skip TLS verify on enrollment (dev only)")
-	_ = cmd.MarkFlagRequired("token")
+	cmd.Flags().StringVar(&gateway, "gateway", client.DefaultGatewayURL, "gateway URL")
+	cmd.Flags().BoolVar(&insecure, "insecure", false, "skip TLS verify (dev only)")
 	return cmd
+}
+
+func readToken() (string, error) {
+	if t := strings.TrimSpace(os.Getenv("PASSERELLE_TOKEN")); t != "" {
+		return t, nil
+	}
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		fmt.Fprint(os.Stderr, "token: ")
+		b, err := term.ReadPassword(fd)
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			return "", err
+		}
+		t := strings.TrimSpace(string(b))
+		if t == "" {
+			return "", fmt.Errorf("token required")
+		}
+		return t, nil
+	}
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && strings.TrimSpace(line) == "" {
+		return "", fmt.Errorf("token required (prompt, stdin, or PASSERELLE_TOKEN)")
+	}
+	t := strings.TrimSpace(line)
+	if t == "" {
+		return "", fmt.Errorf("token required")
+	}
+	return t, nil
 }
 
 func openCmd() *cobra.Command {

@@ -30,7 +30,7 @@ make
 ./bin/passerelle-gateway token create --user alice --data-dir /tmp/passerelle-gw
 
 # Terminal 3 — client
-./bin/passerelle enroll http://127.0.0.1:8080 --token <token> --insecure
+./bin/passerelle auth --gateway http://127.0.0.1:8080 --insecure
 ./bin/passerelle open 3000
 ```
 
@@ -85,7 +85,7 @@ ssh root@passerelle.gnthr.dev passerelle-gateway token create --user alice --dat
 Puis en local :
 
 ```bash
-passerelle enroll https://passerelle.gnthr.dev --token psg_tok_…
+passerelle auth
 passerelle open 8080
 ```
 
@@ -104,7 +104,7 @@ brew install passerelle
 Puis :
 
 ```bash
-passerelle enroll https://passerelle.gnthr.dev --token psg_tok_…
+passerelle auth
 brew services start passerelle
 passerelle open 8080
 ```
