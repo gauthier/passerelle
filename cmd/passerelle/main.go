@@ -209,9 +209,9 @@ func listCmd() *cobra.Command {
 				fmt.Println("no tunnels")
 				return nil
 			}
-			fmt.Printf("%-18s %-42s %-22s %-8s %s\n", "ID", "PUBLIC URL", "LOCAL", "STATUS", "CONNS")
+			fmt.Printf("%-18s %-42s %-22s %-8s %6s %6s\n", "ID", "PUBLIC URL", "LOCAL", "STATUS", "REQS", "LIVE")
 			for _, t := range list {
-				fmt.Printf("%-18s %-42s %-22s %-8s %d\n", t.ID, t.PublicURL, t.LocalDisplay(), t.Status, t.Conns)
+				fmt.Printf("%-18s %-42s %-22s %-8s %6d %6d\n", t.ID, t.PublicURL, t.LocalDisplay(), t.Status, t.Requests, t.Conns)
 			}
 			return nil
 		},
@@ -242,8 +242,8 @@ func statusCmd() *cobra.Command {
 			if st.Connected {
 				state = "connected"
 			}
-			fmt.Printf("Status     %s\nGateway    %s\nTransport  %s\nLatency    %.0f ms\nUser       %s\nDevice     %s\n",
-				state, st.Gateway, st.Transport, st.LatencyMS, st.UserID, st.ClientID)
+			fmt.Printf("Status     %s\nGateway    %s\nTransport  %s\nLatency    %.0f ms\nUser       %s\nDevice     %s\nTraffic    ↓ %s  ↑ %s\n",
+				state, st.Gateway, st.Transport, st.LatencyMS, st.UserID, st.ClientID, humanBytes(st.BytesIn), humanBytes(st.BytesOut))
 			if st.LastError != "" {
 				fmt.Printf("Error      %s\n", st.LastError)
 			}
@@ -277,6 +277,21 @@ func daemonCmd() *cobra.Command {
 			defer stop()
 			return d.Run(ctx)
 		},
+	}
+}
+
+func humanBytes(n int64) string {
+	const k = 1024.0
+	f := float64(n)
+	switch {
+	case f >= k*k*k:
+		return fmt.Sprintf("%.1f GB", f/(k*k*k))
+	case f >= k*k:
+		return fmt.Sprintf("%.1f MB", f/(k*k))
+	case f >= k:
+		return fmt.Sprintf("%.1f KB", f/k)
+	default:
+		return fmt.Sprintf("%d B", n)
 	}
 }
 

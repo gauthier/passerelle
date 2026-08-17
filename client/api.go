@@ -130,6 +130,7 @@ type Tunnel struct {
 	Status    string `json:"status"`
 	Persist   bool   `json:"persist"`
 	Conns     int64  `json:"connections"`
+	Requests  int64  `json:"requests"`
 	BytesIn   int64  `json:"bytes_in"`
 	BytesOut  int64  `json:"bytes_out"`
 }

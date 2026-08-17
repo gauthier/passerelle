@@ -39,10 +39,17 @@ func ForwardRequest(w http.ResponseWriter, r *http.Request, stream io.ReadWriteC
 	return copyFlush(w, body)
 }
 
+// OriginStats is traffic between the tunnel stream and the local origin.
+type OriginStats struct {
+	ToOrigin   int64 // visitor → origin
+	FromOrigin int64 // origin → visitor
+}
+
 // ServeOrigin reads an HTTP/1.1 request from the stream, dials the loopback
 // origin, and pipes until both sides close. tlsConf, if set, wraps the dial
 // so the origin can be HTTPS (typical Docker / Apache on :443).
-func ServeOrigin(stream io.ReadWriteCloser, addr string, timeout time.Duration, tlsConf *tls.Config) error {
+func ServeOrigin(stream io.ReadWriteCloser, addr string, timeout time.Duration, tlsConf *tls.Config) (OriginStats, error) {
+	var stats OriginStats
 	defer stream.Close()
 	if timeout <= 0 {
 		timeout = 10 * time.Second
@@ -50,12 +57,12 @@ func ServeOrigin(stream io.ReadWriteCloser, addr string, timeout time.Duration, 
 	br := bufio.NewReaderSize(stream, bufSize)
 	req, err := http.ReadRequest(br)
 	if err != nil {
-		return err
+		return stats, err
 	}
 	origin, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
 		writeErr(stream, err)
-		return err
+		return stats, err
 	}
 	if tlsConf != nil {
 		cfg := tlsConf.Clone()
@@ -70,17 +77,23 @@ func ServeOrigin(stream io.ReadWriteCloser, addr string, timeout time.Duration, 
 		if err := tc.Handshake(); err != nil {
 			_ = origin.Close()
 			writeErr(stream, err)
-			return err
+			return stats, err
 		}
 		origin = tc
 	}
 	defer origin.Close()
+	toOrig := &countingWriter{w: origin}
+	fromVis := &countingWriter{w: stream}
 	req.RequestURI = ""
-	if err := req.Write(origin); err != nil {
-		return err
+	if err := req.Write(toOrig); err != nil {
+		stats.ToOrigin = toOrig.n
+		return stats, err
 	}
 	rest := io.MultiReader(br, stream)
-	return bidir(origin, rest, stream, origin)
+	err = bidir(toOrig, rest, fromVis, origin)
+	stats.ToOrigin = toOrig.n
+	stats.FromOrigin = fromVis.n
+	return stats, err
 }
 
 func upgrade(w http.ResponseWriter, resp *http.Response, br *bufio.Reader, stream io.ReadWriteCloser) error {
@@ -165,6 +178,25 @@ func closeWrite(w io.Writer) {
 	if c, ok := w.(cw); ok {
 		_ = c.CloseWrite()
 	}
+}
+
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
+}
+
+func (c *countingWriter) CloseWrite() error {
+	type cw interface{ CloseWrite() error }
+	if x, ok := c.w.(cw); ok {
+		return x.CloseWrite()
+	}
+	return nil
 }
 
 func writeErr(w io.Writer, err error) {

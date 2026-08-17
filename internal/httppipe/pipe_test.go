@@ -23,10 +23,13 @@ func TestServeOriginTLS(t *testing.T) {
 	t.Cleanup(func() { _ = client.Close() })
 
 	errc := make(chan error, 1)
+	statsc := make(chan httppipe.OriginStats, 1)
 	go func() {
-		errc <- httppipe.ServeOrigin(server, origin.Listener.Addr().String(), 2*time.Second, &tls.Config{
+		st, err := httppipe.ServeOrigin(server, origin.Listener.Addr().String(), 2*time.Second, &tls.Config{
 			InsecureSkipVerify: true,
 		})
+		statsc <- st
+		errc <- err
 	}()
 
 	req, err := http.NewRequest(http.MethodGet, "http://localhost/", nil)
@@ -51,6 +54,10 @@ func TestServeOriginTLS(t *testing.T) {
 	_ = client.Close()
 	select {
 	case <-errc:
+		st := <-statsc
+		if st.ToOrigin == 0 || st.FromOrigin == 0 {
+			t.Fatalf("stats %+v", st)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("ServeOrigin did not return")
 	}

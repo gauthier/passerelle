@@ -348,6 +348,32 @@ func (d *Daemon) restorePersistent(ctx context.Context) {
 }
 
 func (d *Daemon) keepalive(ctx context.Context, ctrl io.ReadWriteCloser) {
+	ping := func() bool {
+		start := time.Now()
+		env := &controlv1.Envelope{Payload: &controlv1.Envelope_KeepAlive{KeepAlive: &controlv1.KeepAlive{UnixMs: start.UnixMilli()}}}
+		ch := d.expect(env)
+		d.mu.Lock()
+		c := d.control
+		d.mu.Unlock()
+		if c == nil {
+			return false
+		}
+		if err := d.writeControl(c, env); err != nil {
+			return false
+		}
+		select {
+		case <-ch:
+			d.latency.Store(time.Since(start).Nanoseconds())
+			return true
+		case <-time.After(5 * time.Second):
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+	if !ping() {
+		return
+	}
 	t := time.NewTicker(15 * time.Second)
 	defer t.Stop()
 	for {
@@ -355,23 +381,7 @@ func (d *Daemon) keepalive(ctx context.Context, ctrl io.ReadWriteCloser) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			start := time.Now()
-			env := &controlv1.Envelope{Payload: &controlv1.Envelope_KeepAlive{KeepAlive: &controlv1.KeepAlive{UnixMs: start.UnixMilli()}}}
-			ch := d.expect(env)
-			d.mu.Lock()
-			c := d.control
-			d.mu.Unlock()
-			if c == nil {
-				return
-			}
-			if err := d.writeControl(c, env); err != nil {
-				return
-			}
-			select {
-			case <-ch:
-				d.latency.Store(time.Since(start).Nanoseconds())
-			case <-time.After(5 * time.Second):
-			case <-ctx.Done():
+			if !ping() {
 				return
 			}
 		}
@@ -441,6 +451,7 @@ func (d *Daemon) handleData(stream io.ReadWriteCloser) {
 	}
 	if t != nil {
 		atomic.AddInt64(&t.Conns, 1)
+		atomic.AddInt64(&t.Requests, 1)
 		defer atomic.AddInt64(&t.Conns, -1)
 	}
 	var tlsConf *tls.Config
@@ -451,7 +462,13 @@ func (d *Daemon) handleData(stream io.ReadWriteCloser) {
 			ServerName:         "localhost",
 		}
 	}
-	_ = httppipe.ServeOrigin(stream, orig.Addr, 10*time.Second, tlsConf)
+	stats, _ := httppipe.ServeOrigin(stream, orig.Addr, 10*time.Second, tlsConf)
+	d.bytesIn.Add(stats.ToOrigin)
+	d.bytesOut.Add(stats.FromOrigin)
+	if t != nil {
+		atomic.AddInt64(&t.BytesIn, stats.ToOrigin)
+		atomic.AddInt64(&t.BytesOut, stats.FromOrigin)
+	}
 }
 
 func (d *Daemon) openTunnel(host string, port int, subdomain string, persist, https bool) (*Tunnel, error) {
@@ -573,9 +590,7 @@ func (d *Daemon) serveList(w http.ResponseWriter, _ *http.Request) {
 	d.mu.Lock()
 	out := make([]Tunnel, 0, len(d.tunnels))
 	for _, t := range d.tunnels {
-		tt := t.Tunnel
-		tt.Conns = atomic.LoadInt64(&t.Conns)
-		out = append(out, tt)
+		out = append(out, snapshotTunnel(t))
 	}
 	d.mu.Unlock()
 	writeJSON(w, out)
@@ -634,9 +649,7 @@ func (d *Daemon) serveEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			tunnels := make([]Tunnel, 0, len(d.tunnels))
 			for _, tn := range d.tunnels {
-				tt := tn.Tunnel
-				tt.Conns = atomic.LoadInt64(&tn.Conns)
-				tunnels = append(tunnels, tt)
+				tunnels = append(tunnels, snapshotTunnel(tn))
 			}
 			d.mu.Unlock()
 			payload, _ := json.Marshal(map[string]any{"status": st, "tunnels": tunnels})
@@ -644,6 +657,15 @@ func (d *Daemon) serveEvents(w http.ResponseWriter, r *http.Request) {
 			fl.Flush()
 		}
 	}
+}
+
+func snapshotTunnel(t *liveTunnel) Tunnel {
+	tt := t.Tunnel
+	tt.Conns = atomic.LoadInt64(&t.Conns)
+	tt.Requests = atomic.LoadInt64(&t.Requests)
+	tt.BytesIn = atomic.LoadInt64(&t.BytesIn)
+	tt.BytesOut = atomic.LoadInt64(&t.BytesOut)
+	return tt
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
