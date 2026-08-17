@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package passerelle.v1;
+
+option go_package = "github.com/gauthier/passerelle/protocol/controlv1";
+
+// Envelope is the control-stream unit. Identity in Hello is informational;
+// the gateway must take user_id/client_id from the mTLS certificate only.
+message Envelope {
+  uint64 seq = 1;
+  oneof payload {
+    Hello hello = 10;
+    HelloAck hello_ack = 11;
+    OpenTunnel open_tunnel = 12;
+    OpenTunnelAck open_tunnel_ack = 13;
+    CloseTunnel close_tunnel = 14;
+    CloseTunnelAck close_tunnel_ack = 15;
+    KeepAlive keep_alive = 16;
+    Error error = 17;
+  }
+}
+
+message Hello {
+  uint32 protocol_min = 1;
+  uint32 protocol_max = 2;
+  string client_version = 3;
+}
+
+message HelloAck {
+  uint32 protocol = 1;
+  string gateway_version = 2;
+}
+
+message OpenTunnel {
+  string subdomain = 1; // optional request; gateway authorizes
+  bool persist = 2;
+}
+
+message OpenTunnelAck {
+  string tunnel_id = 1;
+  string hostname = 2;
+  string public_url = 3;
+}
+
+message CloseTunnel {
+  string tunnel_id = 1;
+}
+
+message CloseTunnelAck {
+  string tunnel_id = 1;
+}
+
+message KeepAlive {
+  int64 unix_ms = 1;
+}
+
+message Error {
+  string code = 1;
+  string message = 2;
+  string tunnel_id = 3;
+}
+
+// DataPreamble is written at the start of each data stream before HTTP/1.1.
+message DataPreamble {
+  string tunnel_id = 1;
+}

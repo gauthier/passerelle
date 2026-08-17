@@ -1,0 +1,12 @@
+/bin/
+/dist/
+/tmp/
+/certs/
+*.exe
+*.test
+*.out
+.DS_Store
+.idea/
+.vscode/
+coverage.*
+vendor/

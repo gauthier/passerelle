@@ -1,0 +1,11 @@
+[Unit]
+Description=Passerelle client daemon
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/passerelle daemon
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

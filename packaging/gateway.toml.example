@@ -1,0 +1,33 @@
+# Production gateway — gnthr.dev
+#
+# DNS already in place: *.gnthr.dev → this host.
+# A wildcard does not cover the apex gnthr.dev; enrollment uses
+# passerelle.gnthr.dev (reserved, not allocatable as a tunnel).
+#
+# TLS: certificate with SANs gnthr.dev (optional) and *.gnthr.dev.
+
+base_domain = "gnthr.dev"
+listen_https = ":443"
+listen_http = ":80"
+listen_quic = ":443"
+data_dir = "/var/lib/passerelle"
+tls_cert = "/etc/passerelle/tls.crt"
+tls_key = "/etc/passerelle/tls.key"
+log_format = "json"
+log_level = "info"
+public_scheme = "https"
+public_port = 443
+
+[metrics]
+listen = "127.0.0.1:9091"
+
+[quotas]
+default_max_devices = 5
+default_max_tunnels = 10
+default_max_conns = 100
+
+[acme]
+enabled = false
+email = ""
+dns_provider = ""
+# Optional later: ACME inside the gateway (not required; certs come from lego+Porkbun).
