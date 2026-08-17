@@ -1,6 +1,8 @@
 class Passerelle < Formula
   desc "Self-hosted HTTP tunnel"
   homepage "https://github.com/gauthier/passerelle"
+  url "https://github.com/gauthier/passerelle/archive/refs/tags/v0.1.0.tar.gz"
+  sha256 "add331d870e19c16c93227c4258bd76095166cdc25d69cbd89e02b4bb068b58b"
   license "Apache-2.0"
   head "https://github.com/gauthier/passerelle.git", branch: "main"
 
