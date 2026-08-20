@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -121,6 +122,7 @@ func (d *Daemon) loop(ctx context.Context) {
 				continue
 			}
 		}
+		start := time.Now()
 		err := d.connect(ctx, cfg)
 		d.mu.Lock()
 		d.connected = false
@@ -132,7 +134,11 @@ func (d *Daemon) loop(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		wait = backoff.Next(wait)
+		if time.Since(start) > 30*time.Second {
+			wait = 0
+		} else {
+			wait = backoff.Next(wait)
+		}
 		d.log.Info("reconnecting", "after", wait.String(), "err", err)
 		timer := time.NewTimer(wait)
 		select {
@@ -310,7 +316,7 @@ func (d *Daemon) session(ctx context.Context, ctrl io.ReadWriteCloser) error {
 	d.mu.Unlock()
 
 	go d.keepalive(ctx, ctrl)
-	go d.restorePersistent(ctx)
+	go d.restoreTunnels(ctx)
 
 	select {
 	case err := <-readErr:
@@ -320,23 +326,56 @@ func (d *Daemon) session(ctx context.Context, ctrl io.ReadWriteCloser) error {
 	}
 }
 
-func (d *Daemon) restorePersistent(ctx context.Context) {
+func (d *Daemon) restoreTunnels(ctx context.Context) {
 	time.Sleep(50 * time.Millisecond)
 	d.mu.Lock()
-	specs := append([]TunnelSpec(nil), d.cfg.Persistent...)
-	existing := make(map[string]*liveTunnel, len(d.tunnels))
-	for k, v := range d.tunnels {
-		existing[k] = v
+	type liveSpec struct {
+		id, host, subdomain, local string
+		port                       int
+		persist, https             bool
 	}
+	live := make([]liveSpec, 0, len(d.tunnels))
+	for _, t := range d.tunnels {
+		h, p, err := origin.ParseHostPort(t.Local)
+		if err != nil {
+			continue
+		}
+		sub := t.Subdomain
+		if sub == "" {
+			sub, _, _ = strings.Cut(t.Hostname, ".")
+		}
+		live = append(live, liveSpec{t.ID, h, sub, t.Local, p, t.Persist, t.HTTPS})
+	}
+	persist := append([]TunnelSpec(nil), d.cfg.Persistent...)
 	d.mu.Unlock()
-	for _, spec := range specs {
+
+	announced := make(map[string]bool, len(live))
+	for _, sp := range live {
+		if err := d.reopenTunnel(sp.id, sp.host, sp.port, sp.subdomain, sp.persist, sp.https); err != nil {
+			d.log.Info("reannounce failed", "err", err, "hostname", sp.local, "id", sp.id)
+			d.mu.Lock()
+			if t, ok := d.tunnels[sp.id]; ok {
+				t.Status = "stale"
+			}
+			d.mu.Unlock()
+			continue
+		}
+		announced[sp.local] = true
+	}
+	for _, spec := range persist {
+		addr := net.JoinHostPort(spec.Host, fmt.Sprintf("%d", spec.Port))
+		if announced[addr] {
+			continue
+		}
+		d.mu.Lock()
 		already := false
-		for _, t := range existing {
-			if t.Local == net.JoinHostPort(spec.Host, fmt.Sprintf("%d", spec.Port)) && t.Persist {
+		for _, t := range d.tunnels {
+			if t.Local == addr && t.Persist {
 				already = true
 				break
 			}
 		}
+		d.mu.Unlock()
 		if already {
 			continue
 		}
@@ -366,12 +405,17 @@ func (d *Daemon) keepalive(ctx context.Context, ctrl io.ReadWriteCloser) {
 			d.latency.Store(time.Since(start).Nanoseconds())
 			return true
 		case <-time.After(5 * time.Second):
-			return true
+			d.mu.Lock()
+			delete(d.pending, env.Seq)
+			d.mu.Unlock()
+			_ = c.Close()
+			return false
 		case <-ctx.Done():
 			return false
 		}
 	}
 	if !ping() {
+		_ = ctrl.Close()
 		return
 	}
 	t := time.NewTicker(15 * time.Second)
@@ -472,6 +516,24 @@ func (d *Daemon) handleData(stream io.ReadWriteCloser) {
 }
 
 func (d *Daemon) openTunnel(host string, port int, subdomain string, persist, https bool) (*Tunnel, error) {
+	t, err := d.requestOpen(host, port, subdomain, persist, https)
+	if err != nil {
+		return nil, err
+	}
+	d.installTunnel(t, "")
+	return t, nil
+}
+
+func (d *Daemon) reopenTunnel(oldID, host string, port int, subdomain string, persist, https bool) error {
+	t, err := d.requestOpen(host, port, subdomain, persist, https)
+	if err != nil {
+		return err
+	}
+	d.installTunnel(t, oldID)
+	return nil
+}
+
+func (d *Daemon) requestOpen(host string, port int, subdomain string, persist, https bool) (*Tunnel, error) {
 	addr, err := origin.ResolveLoopback(host, port)
 	if err != nil {
 		return nil, err
@@ -500,7 +562,7 @@ func (d *Daemon) openTunnel(host string, port int, subdomain string, persist, ht
 	}
 	switch p := reply.Payload.(type) {
 	case *controlv1.Envelope_OpenTunnelAck:
-		t := &liveTunnel{Tunnel: Tunnel{
+		t := Tunnel{
 			ID:        p.OpenTunnelAck.GetTunnelId(),
 			PublicURL: p.OpenTunnelAck.GetPublicUrl(),
 			Hostname:  p.OpenTunnelAck.GetHostname(),
@@ -509,22 +571,37 @@ func (d *Daemon) openTunnel(host string, port int, subdomain string, persist, ht
 			Subdomain: subdomain,
 			Status:    "active",
 			Persist:   persist,
-		}}
-		d.mu.Lock()
-		d.tunnels[t.ID] = t
-		d.local[t.ID] = localOrigin{Addr: addr, TLS: https}
-		if persist {
-			h, pth, _ := origin.ParseHostPort(addr)
-			d.cfg.UpsertPersistent(TunnelSpec{Host: h, Port: pth, Subdomain: subdomain, HTTPS: https})
-			_ = d.cfg.Save()
 		}
-		out := t.Tunnel
-		d.mu.Unlock()
-		return &out, nil
+		return &t, nil
 	case *controlv1.Envelope_Error:
 		return nil, fmt.Errorf("%s", p.Error.GetMessage())
 	default:
 		return nil, errors.New("unexpected gateway reply")
+	}
+}
+
+func (d *Daemon) installTunnel(t *Tunnel, replaceID string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	live := &liveTunnel{Tunnel: *t}
+	if replaceID != "" {
+		if old, ok := d.tunnels[replaceID]; ok {
+			live.Requests = atomic.LoadInt64(&old.Requests)
+			live.BytesIn = atomic.LoadInt64(&old.BytesIn)
+			live.BytesOut = atomic.LoadInt64(&old.BytesOut)
+			live.Conns = atomic.LoadInt64(&old.Conns)
+		}
+		if replaceID != t.ID {
+			delete(d.tunnels, replaceID)
+			delete(d.local, replaceID)
+		}
+	}
+	d.tunnels[t.ID] = live
+	d.local[t.ID] = localOrigin{Addr: t.Local, TLS: t.HTTPS}
+	if t.Persist {
+		h, pth, _ := origin.ParseHostPort(t.Local)
+		d.cfg.UpsertPersistent(TunnelSpec{Host: h, Port: pth, Subdomain: t.Subdomain, HTTPS: t.HTTPS})
+		_ = d.cfg.Save()
 	}
 }
 

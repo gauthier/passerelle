@@ -406,12 +406,19 @@ func (s *Server) serveQUIC(ctx context.Context) {
 
 func (s *Server) serveSession(ctx context.Context, sess *tunnel.Session) {
 	s.mu.Lock()
+	if prev := s.sessions[sess.ClientID()]; prev != nil && prev != sess {
+		s.mu.Unlock()
+		s.reg.DisconnectSession(prev)
+		_ = prev.Close()
+		s.log.Info("client replaced", "user_id", sess.UserID(), "client_id", sess.ClientID())
+		s.mu.Lock()
+	}
 	s.sessions[sess.ClientID()] = sess
 	s.mu.Unlock()
 	s.metrics.Clients.Inc()
 	defer func() {
 		s.metrics.Clients.Dec()
-		s.reg.DisconnectClient(sess.ClientID())
+		s.reg.DisconnectSession(sess)
 		s.mu.Lock()
 		if s.sessions[sess.ClientID()] == sess {
 			delete(s.sessions, sess.ClientID())

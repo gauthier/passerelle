@@ -103,11 +103,14 @@ func (r *Registry) Release(tunnelID string) {
 	r.notify(n)
 }
 
-func (r *Registry) DisconnectClient(clientID string) {
+func (r *Registry) DisconnectSession(sess Session) {
+	if sess == nil {
+		return
+	}
 	r.mu.Lock()
 	now := time.Now()
-	for id, a := range r.byTunnel {
-		if a.ClientID != clientID {
+	for _, a := range r.byTunnel {
+		if a.sess != sess {
 			continue
 		}
 		a.sess = nil
@@ -116,7 +119,6 @@ func (r *Registry) DisconnectClient(clientID string) {
 			continue
 		}
 		a.GraceUntil = now.Add(r.grace)
-		_ = id
 	}
 	n := len(r.byTunnel)
 	r.mu.Unlock()
